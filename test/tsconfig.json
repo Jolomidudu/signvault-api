@@ -3,8 +3,9 @@
   "compilerOptions": {
     "rootDir": "..",
     "incremental": false,
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "target": "ES2022",
     "noEmit": true
   },
   "include": ["../src/**/*.ts", "./**/*.ts"]

@@ -1,0 +1,201 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  DISABLED
+  PENDING_VERIFICATION
+}
+
+enum SignatureCategory {
+  PROFESSIONAL
+  PERSONAL
+  BUSINESS
+  INITIALS
+  CUSTOM
+}
+
+enum SignatureStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+  ARCHIVED
+}
+
+enum SignatureUsageType {
+  COPY
+  EXPORT
+  SHARE
+  CRYPTOGRAPHIC_SIGN
+}
+
+enum VerificationStatus {
+  VALID
+  INVALID
+  REVOKED
+  EXPIRED
+  MODIFIED
+  UNKNOWN
+}
+
+enum AuditEvent {
+  USER_CREATED
+  USER_LOGIN
+  SIGNATURE_CREATED
+  SIGNATURE_UPDATED
+  SIGNATURE_VERSION_CREATED
+  SIGNATURE_COPIED
+  SIGNATURE_EXPORTED
+  SIGNATURE_SHARED
+  SIGNATURE_REVOKED
+  SIGNATURE_VERIFIED
+}
+
+model User {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email         String        @unique @db.VarChar(320)
+  passwordHash  String
+  firstName     String        @db.VarChar(100)
+  lastName      String        @db.VarChar(100)
+  displayName   String        @db.VarChar(160)
+  avatarUrl     String?       @db.Text
+  emailVerified Boolean       @default(false)
+  accountStatus AccountStatus @default(PENDING_VERIFICATION)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  signatures      Signature[]
+  signatureUsages SignatureUsage[]
+  revocations     Revocation[]
+  auditLogs       AuditLog[]
+}
+
+model Signature {
+  id        String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String           @db.Uuid
+  name      String           @db.VarChar(160)
+  category  SignatureCategory
+  status    SignatureStatus
+  expiresAt DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  versions             SignatureVersion[]
+  usages               SignatureUsage[]
+  revocations          Revocation[]
+  verificationRecords  VerificationRecord[]
+  auditLogs            AuditLog[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([category])
+  @@index([expiresAt])
+}
+
+model SignatureVersion {
+  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  signatureId     String      @db.Uuid
+  versionNumber   Int
+  style           String      @db.VarChar(100)
+  displayText     String      @db.VarChar(500)
+  assetKey        String      @db.Text
+  assetMimeType   String?     @db.VarChar(100)
+  assetSize       Int?
+  createdAt       DateTime    @default(now())
+
+  signature        Signature       @relation(fields: [signatureId], references: [id], onDelete: Restrict)
+  usages           SignatureUsage[]
+  verificationRecords VerificationRecord[]
+
+  @@unique([signatureId, versionNumber])
+  @@index([signatureId])
+  @@index([createdAt])
+}
+
+model SignatureUsage {
+  id               String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  signatureId      String              @db.Uuid
+  signatureVersionId String?            @db.Uuid
+  userId           String              @db.Uuid
+  usageType        SignatureUsageType
+  externalReference String?            @db.Text
+  expiresAt        DateTime?
+  revokedAt        DateTime?
+  createdAt        DateTime            @default(now())
+
+  signature          Signature        @relation(fields: [signatureId], references: [id], onDelete: Restrict)
+  signatureVersion   SignatureVersion? @relation(fields: [signatureVersionId], references: [id], onDelete: Restrict)
+  user               User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  verificationRecords VerificationRecord[]
+
+  @@index([signatureId])
+  @@index([signatureVersionId])
+  @@index([userId])
+  @@index([usageType])
+  @@index([expiresAt])
+}
+
+model Revocation {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  signatureId String  @db.Uuid
+  userId    String  @db.Uuid
+  reason    String  @db.Text
+  revokedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  signature Signature @relation(fields: [signatureId], references: [id], onDelete: Restrict)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([signatureId])
+  @@index([userId])
+  @@index([revokedAt])
+}
+
+model VerificationRecord {
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  signatureId        String             @db.Uuid
+  signatureVersionId String?            @db.Uuid
+  signatureUsageId   String?            @db.Uuid
+  verificationStatus VerificationStatus
+  documentHash       String?            @db.Text
+  hashAlgorithm      String?            @db.VarChar(100)
+  verifiedAt         DateTime?
+  createdAt          DateTime           @default(now())
+
+  signature        Signature        @relation(fields: [signatureId], references: [id], onDelete: Restrict)
+  signatureVersion SignatureVersion? @relation(fields: [signatureVersionId], references: [id], onDelete: Restrict)
+  signatureUsage   SignatureUsage?  @relation(fields: [signatureUsageId], references: [id], onDelete: Restrict)
+
+  @@index([signatureId])
+  @@index([signatureVersionId])
+  @@index([signatureUsageId])
+  @@index([verificationStatus])
+  @@index([verifiedAt])
+}
+
+model AuditLog {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String?   @db.Uuid
+  signatureId String?  @db.Uuid
+  event     AuditEvent
+  ipAddress String?  @db.VarChar(45)
+  userAgent String?  @db.Text
+  metadata  Json
+  createdAt DateTime  @default(now())
+
+  user       User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  signature  Signature? @relation(fields: [signatureId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([signatureId])
+  @@index([createdAt])
+  @@index([event])
+}
