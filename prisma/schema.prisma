@@ -13,6 +13,11 @@ enum AccountStatus {
   PENDING_VERIFICATION
 }
 
+enum Role {
+  USER
+  ADMIN
+}
+
 enum SignatureCategory {
   PROFESSIONAL
   PERSONAL
@@ -47,8 +52,16 @@ enum VerificationStatus {
 enum AuditEvent {
   USER_CREATED
   USER_LOGIN
+  USER_LOGOUT
+  USER_LOGIN_FAILED
+  USER_PASSWORD_RESET
+  USER_EMAIL_VERIFIED
+  USER_REFRESH_TOKEN_ROTATED
   SIGNATURE_CREATED
   SIGNATURE_UPDATED
+  SIGNATURE_ARCHIVED
+  SIGNATURE_RESTORED
+  SIGNATURE_DELETED
   SIGNATURE_VERSION_CREATED
   SIGNATURE_COPIED
   SIGNATURE_EXPORTED
@@ -67,13 +80,67 @@ model User {
   avatarUrl     String?       @db.Text
   emailVerified Boolean       @default(false)
   accountStatus AccountStatus @default(PENDING_VERIFICATION)
+  role          Role          @default(USER)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  signatures      Signature[]
-  signatureUsages SignatureUsage[]
-  revocations     Revocation[]
-  auditLogs       AuditLog[]
+  signatures              Signature[]
+  signatureUsages         SignatureUsage[]
+  revocations             Revocation[]
+  auditLogs               AuditLog[]
+  refreshTokens           RefreshToken[]
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+}
+
+model RefreshToken {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique @db.Text
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique @db.Text
+  expiresAt DateTime
+  usedAt    DateTime?
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([usedAt])
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique @db.Text
+  expiresAt DateTime
+  usedAt    DateTime?
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([usedAt])
 }
 
 model Signature {
