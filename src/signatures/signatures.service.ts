@@ -39,7 +39,7 @@ export class SignaturesService {
           userId,
           signatureId,
           event,
-          metadata,
+          metadata: metadata as Prisma.InputJsonValue,
         },
       });
     } catch {
