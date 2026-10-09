@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { HealthService } from './health.service';
 
 describe('HealthService', () => {

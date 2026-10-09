@@ -1,9 +1,22 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
+
+  constructor() {
+    const connectionString = process.env.DATABASE_URL;
+
+    super(
+      connectionString
+        ? {
+            adapter: new PrismaPg({ connectionString }),
+          }
+        : undefined,
+    );
+  }
 
   async onModuleInit() {
     if (!process.env.DATABASE_URL) {
@@ -33,7 +46,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       await this.$queryRaw`SELECT 1`;
       return true;
     } catch (error) {
-      this.logger.error(`Database connectivity check failed: ${(error as Error).message}`);
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Database connectivity check failed: ${message}`);
       return false;
     }
   }

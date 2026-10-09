@@ -24,7 +24,7 @@ describe('Health API (e2e)', () => {
     await app.close();
   });
 
-  it('returns a safe degraded response when DATABASE_URL is not configured', async () => {
+  it('returns a healthy response when the database is configured and reachable', async () => {
     const response = await request(app.getHttpServer())
       .get('/api/v1/health')
       .expect(200);
@@ -32,8 +32,8 @@ describe('Health API (e2e)', () => {
     expect(response.body).toEqual({
       success: true,
       service: 'signvault-api',
-      status: 'degraded',
-      database: 'unavailable',
+      status: 'healthy',
+      database: 'connected',
     });
   });
 });

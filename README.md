@@ -31,6 +31,20 @@
 $ npm install
 ```
 
+## Database development
+
+Set `DATABASE_URL` in the API repository's local `.env` file to the Neon PostgreSQL connection string. Keep the value private; `.env.example` contains no credentials.
+
+```bash
+npm run prisma:generate
+npm run prisma:migrate -- --name init_signvault_core
+npm run prisma:studio
+```
+
+Prisma migrations require a valid `DATABASE_URL`. Do not use `prisma db push` as a substitute for migrations. Prisma Studio is intended for local development and should not be exposed publicly.
+
+Run the API with `npm run start:dev`. Run unit and E2E tests with `npm test` and `npm run test:e2e`; those test suites should not require a live Neon database.
+
 ## Compile and run the project
 
 ```bash
