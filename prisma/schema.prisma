@@ -63,6 +63,9 @@ enum AuditEvent {
   SIGNATURE_RESTORED
   SIGNATURE_DELETED
   SIGNATURE_VERSION_CREATED
+  SIGNATURE_VERSION_DUPLICATED
+  SIGNATURE_VERSION_SELECTED
+  SIGNATURE_VERSION_ARCHIVED
   SIGNATURE_COPIED
   SIGNATURE_EXPORTED
   SIGNATURE_SHARED
@@ -150,11 +153,13 @@ model Signature {
   category  SignatureCategory
   status    SignatureStatus
   expiresAt DateTime?
+  currentVersionId String?           @db.Uuid
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
 
   user                 User               @relation(fields: [userId], references: [id], onDelete: Restrict)
   versions             SignatureVersion[]
+  currentVersion       SignatureVersion?  @relation("CurrentSignatureVersion", fields: [id, currentVersionId], references: [signatureId, id], onDelete: Restrict)
   usages               SignatureUsage[]
   revocations          Revocation[]
   verificationRecords  VerificationRecord[]
@@ -172,16 +177,20 @@ model SignatureVersion {
   versionNumber   Int
   style           String      @db.VarChar(100)
   displayText     String      @db.VarChar(500)
-  assetKey        String      @db.Text
+  design          Json        @default("{}")
+  assetKey        String?     @db.Text
   assetMimeType   String?     @db.VarChar(100)
   assetSize       Int?
+  archivedAt      DateTime?
   createdAt       DateTime    @default(now())
 
   signature        Signature       @relation(fields: [signatureId], references: [id], onDelete: Restrict)
+  selectedBy       Signature[]     @relation("CurrentSignatureVersion")
   usages           SignatureUsage[]
   verificationRecords VerificationRecord[]
 
   @@unique([signatureId, versionNumber])
+  @@unique([signatureId, id])
   @@index([signatureId])
   @@index([createdAt])
 }

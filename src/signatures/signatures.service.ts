@@ -71,8 +71,17 @@ export class SignaturesService {
     expiresAt: Date | null;
     createdAt: Date;
     updatedAt: Date;
+    currentVersion?: {
+      id: string;
+      versionNumber: number;
+      displayText: string;
+      style: string;
+      design: Prisma.JsonValue;
+      createdAt: Date;
+    } | null;
+    _count?: { versions: number };
   }) {
-    return {
+    const result = {
       id: signature.id,
       name: signature.name,
       category: signature.category,
@@ -81,6 +90,25 @@ export class SignaturesService {
       createdAt: toIsoValue(signature.createdAt),
       updatedAt: toIsoValue(signature.updatedAt),
     };
+
+    if (signature._count) {
+      return {
+        ...result,
+        currentVersion: signature.currentVersion
+          ? {
+              id: signature.currentVersion.id,
+              versionNumber: signature.currentVersion.versionNumber,
+              displayText: signature.currentVersion.displayText,
+              style: signature.currentVersion.style,
+              design: signature.currentVersion.design,
+              createdAt: toIsoValue(signature.currentVersion.createdAt),
+            }
+          : null,
+        versionCount: signature._count.versions,
+      };
+    }
+
+    return result;
   }
 
   private async requireOwnedSignature(userId: string, signatureId: string) {
@@ -224,6 +252,19 @@ export class SignaturesService {
       orderBy: { [sort]: order },
       skip: (page - 1) * limit,
       take: limit,
+      include: {
+        currentVersion: {
+          select: {
+            id: true,
+            versionNumber: true,
+            displayText: true,
+            style: true,
+            design: true,
+            createdAt: true,
+          },
+        },
+        _count: { select: { versions: true } },
+      },
     });
 
     return {
@@ -273,7 +314,30 @@ export class SignaturesService {
   }
 
   async getById(userId: string, signatureId: string) {
-    const signature = await this.requireOwnedSignature(userId, signatureId);
+    const signature = await this.prisma.signature.findFirst({
+      where: { id: signatureId, userId },
+      include: {
+        currentVersion: {
+          select: {
+            id: true,
+            versionNumber: true,
+            displayText: true,
+            style: true,
+            design: true,
+            createdAt: true,
+          },
+        },
+        _count: { select: { versions: true } },
+      },
+    });
+
+    if (!signature) {
+      throw new NotFoundException({
+        message: 'Signature not found.',
+        code: 'SIGNATURE_NOT_FOUND',
+      });
+    }
+
     return this.serializeSignature(signature);
   }
 
