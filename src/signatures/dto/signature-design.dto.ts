@@ -9,10 +9,10 @@ export enum SignatureDesignStyle {
 }
 
 export enum SignatureFontFamily {
-  CLASSIC_SERIF = 'CLASSIC_SERIF',
-  ELEGANT_SCRIPT = 'ELEGANT_SCRIPT',
-  MODERN_SCRIPT = 'MODERN_SCRIPT',
-  MINIMAL_SANS = 'MINIMAL_SANS',
+  CLASSIC_SERIF = 'serif',
+  ELEGANT_SCRIPT = 'script',
+  MODERN_SCRIPT = 'modern-script',
+  MINIMAL_SANS = 'sans-serif',
 }
 
 export class SignatureDesignDto {

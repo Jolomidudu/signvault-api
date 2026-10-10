@@ -224,6 +224,7 @@ export class SignatureVersionsService {
   async selectCurrent(userId: string, signatureId: string, versionId: string) {
     const selected = await this.prisma.$transaction(async (transaction) => {
       await this.requireOwnedSignature(transaction, userId, signatureId);
+      await this.lockVersionSequence(transaction, signatureId);
       const version = await transaction.signatureVersion.findFirst({
         where: { id: versionId, signatureId, archivedAt: null },
       });
@@ -248,6 +249,7 @@ export class SignatureVersionsService {
   async archive(userId: string, signatureId: string, versionId: string) {
     const archived = await this.prisma.$transaction(async (transaction) => {
       const signature = await this.requireOwnedSignature(transaction, userId, signatureId);
+      await this.lockVersionSequence(transaction, signatureId);
       const version = await transaction.signatureVersion.findFirst({
         where: { id: versionId, signatureId },
       });
