@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -65,6 +67,7 @@ export class SignaturesController {
   }
 
   @Post(':id/archive')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Archive a signature without deleting its historical record' })
   @ApiParam({ name: 'id', description: 'Signature UUID' })
   archive(@CurrentUser() user: { id: string }, @Param('id') id: string) {
@@ -72,6 +75,7 @@ export class SignaturesController {
   }
 
   @Post(':id/restore')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Restore an archived signature to active status' })
   @ApiParam({ name: 'id', description: 'Signature UUID' })
   restore(@CurrentUser() user: { id: string }, @Param('id') id: string) {

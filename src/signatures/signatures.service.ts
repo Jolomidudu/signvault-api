@@ -164,7 +164,7 @@ export class SignaturesService {
     if (query.status) {
       if (query.status === 'ACTIVE') {
         where.status = 'ACTIVE';
-        where.expiresAt = { gte: new Date() };
+        where.OR = [{ expiresAt: null }, { expiresAt: { gte: new Date() } }];
       } else if (query.status === 'EXPIRED') {
         where.OR = [
           { status: 'EXPIRED' },
@@ -179,26 +179,29 @@ export class SignaturesService {
   }
 
   async create(userId: string, dto: CreateSignatureDto) {
-    const signatureCount = await this.prisma.signature.count({
-      where: { userId },
-    });
-
-    if (signatureCount >= MAX_SIGNATURES_PER_USER) {
-      throw new ConflictException({
-        message: `Signature vault limit reached. You can have up to ${MAX_SIGNATURES_PER_USER} signatures.`,
-        code: 'SIGNATURE_LIMIT_REACHED',
-      });
-    }
-
     const expiresAt = this.normalizeExpiry(dto.expiresAt);
-    const signature = await this.prisma.signature.create({
-      data: {
-        userId,
-        name: this.normalizeName(dto.name),
-        category: dto.category,
-        status: 'ACTIVE',
-        expiresAt,
-      },
+    const name = this.normalizeName(dto.name);
+    const signature = await this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtextextended(${userId}, 0))`;
+
+      const signatureCount = await transaction.signature.count({ where: { userId } });
+
+      if (signatureCount >= MAX_SIGNATURES_PER_USER) {
+        throw new ConflictException({
+          message: `Signature vault limit reached. You can have up to ${MAX_SIGNATURES_PER_USER} signatures.`,
+          code: 'SIGNATURE_LIMIT_REACHED',
+        });
+      }
+
+      return transaction.signature.create({
+        data: {
+          userId,
+          name,
+          category: dto.category,
+          status: 'ACTIVE',
+          expiresAt,
+        },
+      });
     });
 
     await this.recordAudit(userId, signature.id, 'SIGNATURE_CREATED', {
@@ -215,15 +218,13 @@ export class SignaturesService {
     const order = query.order ?? 'desc';
     const where = this.buildListWhere(userId, query);
 
-    const [total, items] = await Promise.all([
-      this.prisma.signature.count({ where }),
-      this.prisma.signature.findMany({
-        where,
-        orderBy: { [sort]: order },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-    ]);
+    const total = await this.prisma.signature.count({ where });
+    const items = await this.prisma.signature.findMany({
+      where,
+      orderBy: { [sort]: order },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
 
     return {
       items: items.map((signature) => this.serializeSignature(signature)),
