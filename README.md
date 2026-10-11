@@ -45,6 +45,14 @@ Prisma migrations require a valid `DATABASE_URL`. Do not use `prisma db push` as
 
 Run the API with `npm run start:dev`. Run unit and E2E tests with `npm test` and `npm run test:e2e`; those test suites should not require a live Neon database.
 
+## Signature versions
+
+Creating a signature creates only its profile. Create its first visual version separately with `POST /api/v1/signatures/:signatureId/versions`. Designer configuration is validated structured JSON: styles are `CLASSIC`, `ELEGANT`, `MODERN`, or `MINIMAL`, and font families are restricted to the built-in identifiers in the API DTO. Arbitrary CSS, scripts, and remote font URLs are not accepted.
+
+Saved versions are immutable. Use `POST /api/v1/signatures/:signatureId/versions/:versionId/duplicate` to create a new version from saved designer data. Version numbers are assigned while holding a PostgreSQL transaction-scoped advisory lock for the parent signature, with the unique `(signatureId, versionNumber)` constraint as a database guard. The first version is selected automatically; use `PUT /api/v1/signatures/:signatureId/versions/:versionId/current` to select another version.
+
+Archiving a version is soft: it preserves designer data and historical references. Archiving the current version clears the current selection; archived versions cannot be selected or duplicated. Full history is available from `GET /api/v1/signatures/:signatureId/versions`; signature detail and vault list responses include only the current-version preview and version count.
+
 ## Compile and run the project
 
 ```bash

@@ -422,6 +422,21 @@ describe('Signature Vault API (e2e)', () => {
       .send(payload)
       .expect(201);
 
+    await request(app.getHttpServer())
+      .get(`/api/v1/signatures/${signature.body.id}/versions/${unrelated.body.id}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/signatures/${signature.body.id}/versions/${first.body.id}/duplicate`)
+      .set('Authorization', `Bearer ${otherUser.accessToken}`)
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/signatures/${signature.body.id}/versions/${first.body.id}/archive`)
+      .set('Authorization', `Bearer ${otherUser.accessToken}`)
+      .expect(404);
+
     const duplicate = await request(app.getHttpServer())
       .post(`/api/v1/signatures/${signature.body.id}/versions/${first.body.id}/duplicate`)
       .set('Authorization', `Bearer ${accessToken}`)

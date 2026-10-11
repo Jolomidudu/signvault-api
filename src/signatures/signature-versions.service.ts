@@ -65,7 +65,7 @@ export class SignatureVersionsService {
   }
 
   private async lockVersionSequence(transaction: Prisma.TransactionClient, signatureId: string) {
-    await transaction.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${signatureId}, 0))`;
+    await transaction.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtextextended(${signatureId}, 0))`;
   }
 
   private async createNextVersion(
@@ -141,12 +141,13 @@ export class SignatureVersionsService {
   }
 
   async list(userId: string, signatureId: string, query: ListSignatureVersionsQueryDto) {
-    await this.prisma.signature.findFirstOrThrow({
+    const ownedSignature = await this.prisma.signature.findFirst({
       where: { id: signatureId, userId },
       select: { id: true },
-    }).catch(() => {
-      throw this.notFound();
     });
+    if (!ownedSignature) {
+      throw this.notFound();
+    }
 
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
@@ -248,8 +249,9 @@ export class SignatureVersionsService {
 
   async archive(userId: string, signatureId: string, versionId: string) {
     const archived = await this.prisma.$transaction(async (transaction) => {
-      const signature = await this.requireOwnedSignature(transaction, userId, signatureId);
+      await this.requireOwnedSignature(transaction, userId, signatureId);
       await this.lockVersionSequence(transaction, signatureId);
+      const signature = await this.requireOwnedSignature(transaction, userId, signatureId);
       const version = await transaction.signatureVersion.findFirst({
         where: { id: versionId, signatureId },
       });
