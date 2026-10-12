@@ -266,7 +266,7 @@ describe('Signature Vault API (e2e)', () => {
   });
 
   it('creates, lists, and retrieves owned versions with validated designer data', async () => {
-    const { accessToken } = await createTestUser('versions-owner');
+    const { user, accessToken } = await createTestUser('versions-owner');
     const otherUser = await createTestUser('versions-other');
     const signature = await createSignature(accessToken).expect(201);
     const payload = {
@@ -303,6 +303,15 @@ describe('Signature Vault API (e2e)', () => {
       design: payload.design,
     });
     expect(created.body.assetKey).toBeUndefined();
+
+    const creationAudit = await prisma.auditLog.findFirst({
+      where: {
+        userId: user.id,
+        signatureId: signature.body.id,
+        event: 'SIGNATURE_VERSION_CREATED',
+      },
+    });
+    expect(creationAudit).not.toBeNull();
 
     await request(app.getHttpServer())
       .post(`/api/v1/signatures/${signature.body.id}/versions`)
@@ -471,6 +480,31 @@ describe('Signature Vault API (e2e)', () => {
     expect(remaining.find((version) => version.id === first.body.id)?.displayText).toBe('Historical Text');
     const storedSignature = await prisma.signature.findUnique({ where: { id: signature.body.id } });
     expect(storedSignature?.currentVersionId).toBeNull();
+    const versionEvents = [
+      'SIGNATURE_VERSION_CREATED',
+      'SIGNATURE_VERSION_DUPLICATED',
+      'SIGNATURE_VERSION_SELECTED',
+      'SIGNATURE_VERSION_ARCHIVED',
+    ] as const;
+    const auditRecords = await prisma.auditLog.findMany({
+      where: {
+        userId: user.id,
+        signatureId: signature.body.id,
+        event: { in: [...versionEvents] },
+      },
+      select: { userId: true, signatureId: true, event: true },
+    });
+    expect(auditRecords).toEqual(
+      expect.arrayContaining(
+        versionEvents.map((event) =>
+          expect.objectContaining({
+            userId: user.id,
+            signatureId: signature.body.id,
+            event,
+          }),
+        ),
+      ),
+    );
     expect(user.id).toBeTruthy();
   });
 });
