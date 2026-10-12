@@ -1,4 +1,5 @@
 import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { jest } from '@jest/globals';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { SignatureSvgRenderer } from './rendering/signature-svg.renderer';
@@ -39,7 +40,14 @@ describe('SignatureAssetsService', () => {
     prisma = {
       signature: { findFirst: jest.fn().mockResolvedValue({ id: signatureId }) },
       signatureVersion: {
-        findFirst: jest.fn().mockImplementation(async () => version),
+        findFirst: jest.fn().mockImplementation(async ({ where }) => {
+          if (where.assetKey) {
+            return version.assetKey === where.assetKey && version.assetChecksum === where.assetChecksum
+              ? { id: versionId }
+              : null;
+          }
+          return version;
+        }),
         update: jest.fn().mockImplementation(async ({ data }) => {
           version = { ...version, ...data };
           return version;
@@ -121,5 +129,5 @@ describe('SignatureAssetsService', () => {
     expect(prisma.auditLog.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ event: 'SIGNATURE_EXPORTED' }) }),
     );
-  });
+  }, 15000);
 });

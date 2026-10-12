@@ -1,15 +1,34 @@
 import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { jest } from '@jest/globals';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { StorageService } from '../src/storage/storage.service';
 
 describe('Signature Vault API (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let jwtService: JwtService;
   const createdUserIds = new Set<string>();
+  const storedAssets = new Map<
+    string,
+    { body: Buffer; contentType: string; size: number; checksum: string }
+  >();
+  const storageMock = {
+    objectExists: jest.fn(async (key: string) => {
+      const object = storedAssets.get(key);
+      return object
+        ? { contentType: object.contentType, size: object.size, checksum: object.checksum }
+        : null;
+    }),
+    putObject: jest.fn(async ({ key, body, contentType, checksum }) => {
+      storedAssets.set(key, { body, contentType, size: body.byteLength, checksum });
+    }),
+    getObject: jest.fn(async (key: string) => storedAssets.get(key) ?? null),
+    deleteObject: jest.fn(async (key: string) => storedAssets.delete(key)),
+  };
 
   const uniqueEmail = (suffix: string) => `vault-${suffix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
 
@@ -47,7 +66,10 @@ describe('Signature Vault API (e2e)', () => {
   beforeAll(async () => {
     const moduleFixture = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(StorageService)
+      .useValue(storageMock)
+      .compile();
 
     app = moduleFixture.createNestApplication();
     app.useGlobalPipes(
@@ -69,6 +91,8 @@ describe('Signature Vault API (e2e)', () => {
   });
 
   afterEach(async () => {
+    storedAssets.clear();
+    jest.clearAllMocks();
     for (const userId of createdUserIds) {
       await prisma.auditLog.deleteMany({ where: { userId } });
       const signatures = await prisma.signature.findMany({
@@ -506,5 +530,116 @@ describe('Signature Vault API (e2e)', () => {
       ),
     );
     expect(user.id).toBeTruthy();
+  });
+
+  it('renders, retrieves, and exports private assets only for the owning user', async () => {
+    const { user, accessToken } = await createTestUser('assets-owner');
+    const otherUser = await createTestUser('assets-other');
+    const signature = await createSignature(accessToken).expect(201);
+    const unrelatedSignature = await createSignature(accessToken, { name: 'Unrelated' }).expect(201);
+    const payload = {
+      displayText: 'Saved Visual Name',
+      style: 'CLASSIC',
+      design: {
+        fontFamily: 'serif',
+        fontSize: 48,
+        fontWeight: 400,
+        letterSpacing: 0,
+        slant: 0,
+        rotation: 0,
+        strokeWidth: 1,
+      },
+    };
+    const version = await request(app.getHttpServer())
+      .post(`/api/v1/signatures/${signature.body.id}/versions`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send(payload)
+      .expect(201);
+
+    const renderPath = `/api/v1/signatures/${signature.body.id}/versions/${version.body.id}/render`;
+    await request(app.getHttpServer()).post(renderPath).expect(401);
+
+    const rendered = await request(app.getHttpServer())
+      .post(renderPath)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ displayText: 'Must not replace saved data' })
+      .expect(200);
+    expect(rendered.body).toMatchObject({
+      versionId: version.body.id,
+      mimeType: 'image/svg+xml',
+      reused: false,
+    });
+    expect(rendered.body.assetKey).toBeUndefined();
+    expect(rendered.body.checksum).toMatch(/^[a-f0-9]{64}$/);
+
+    const reused = await request(app.getHttpServer())
+      .post(renderPath)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+    expect(reused.body.reused).toBe(true);
+
+    await request(app.getHttpServer())
+      .post(renderPath)
+      .set('Authorization', `Bearer ${otherUser.accessToken}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(`/api/v1/signatures/${unrelatedSignature.body.id}/versions/${version.body.id}/render`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(404);
+
+    const storedVersion = await prisma.signatureVersion.findUnique({ where: { id: version.body.id } });
+    expect(storedVersion).toMatchObject({
+      displayText: payload.displayText,
+      style: payload.style,
+      design: payload.design,
+      assetMimeType: 'image/svg+xml',
+    });
+
+    const assetPath = `/api/v1/signatures/${signature.body.id}/versions/${version.body.id}/asset`;
+    await request(app.getHttpServer()).get(assetPath).expect(401);
+    const asset = await request(app.getHttpServer())
+      .get(assetPath)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+    expect(asset.headers['content-type']).toContain('image/svg+xml');
+    expect(asset.headers['content-disposition']).toContain('attachment; filename="signature-1.svg"');
+    expect(asset.headers['cache-control']).toContain('private');
+
+    await request(app.getHttpServer())
+      .get(assetPath)
+      .set('Authorization', `Bearer ${otherUser.accessToken}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .get(`/api/v1/signatures/${signature.body.id}/versions/${version.body.id}/export?format=png&scale=3`)
+      .expect(401);
+
+    const png = await request(app.getHttpServer())
+      .get(`/api/v1/signatures/${signature.body.id}/versions/${version.body.id}/export?format=png&scale=3`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+    expect(png.headers['content-type']).toContain('image/png');
+    await request(app.getHttpServer())
+      .get(`/api/v1/signatures/${signature.body.id}/versions/${version.body.id}/export?format=png&scale=4`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(400);
+
+    const missingVersion = await request(app.getHttpServer())
+      .post(`/api/v1/signatures/${signature.body.id}/versions`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ ...payload, displayText: 'Not rendered' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .get(`/api/v1/signatures/${signature.body.id}/versions/${missingVersion.body.id}/asset`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(404);
+
+    const renderAudit = await prisma.auditLog.findFirst({
+      where: { userId: user.id, signatureId: signature.body.id, event: 'SIGNATURE_ASSET_RENDERED' },
+    });
+    const exportAudit = await prisma.auditLog.findFirst({
+      where: { userId: user.id, signatureId: signature.body.id, event: 'SIGNATURE_EXPORTED' },
+    });
+    expect(renderAudit).not.toBeNull();
+    expect(exportAudit).not.toBeNull();
   });
 });

@@ -13,6 +13,10 @@ export class StorageService {
 
   constructor(private readonly configService: ConfigService) {}
 
+  onModuleDestroy() {
+    this.client?.destroy();
+  }
+
   private unavailable() {
     return new ServiceUnavailableException({
       message: 'Signature asset storage is unavailable.',
@@ -109,6 +113,7 @@ export class StorageService {
         if (size > MAX_OBJECT_SIZE) throw this.unavailable();
         chunks.push(buffer);
       }
+      if (size !== response.ContentLength) throw this.unavailable();
 
       return {
         body: Buffer.concat(chunks, size),

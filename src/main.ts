@@ -37,7 +37,9 @@ async function bootstrap() {
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('SignVault API')
-    .setDescription('Secure digital signature vault and cryptographic signature management API.')
+    .setDescription(
+      'API for managing visual signature designs and rendered assets. SVG and PNG assets are not cryptographic digital signatures.',
+    )
     .setVersion('1.0')
     .addServer(`/api/v${configService.get<string>('API_VERSION') ?? '1'}`)
     .build();

@@ -1,4 +1,5 @@
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { jest } from '@jest/globals';
 import { ConfigService } from '@nestjs/config';
 import { StorageService } from './storage.service';
 
@@ -22,7 +23,10 @@ describe('StorageService', () => {
     send = jest.spyOn(S3Client.prototype, 'send').mockResolvedValue({} as never);
   });
 
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => {
+    service.onModuleDestroy();
+    jest.restoreAllMocks();
+  });
 
   it('writes canonical SVG bytes with trusted metadata', async () => {
     await service.putObject({

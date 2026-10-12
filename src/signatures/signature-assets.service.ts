@@ -117,15 +117,22 @@ export class SignatureAssetsService {
         });
       } catch {
         try {
-          if (previousObject) {
-            await this.storage.putObject({
-              key,
-              body: previousObject.body,
-              contentType: previousObject.contentType ?? SVG_MIME_TYPE,
-              checksum: previousObject.checksum ?? createHash('sha256').update(previousObject.body).digest('hex'),
-            });
-          } else {
-            await this.storage.deleteObject(key);
+          const concurrentCommit = await this.prisma.signatureVersion.findFirst({
+            where: { id: version.id, assetKey: key, assetChecksum: checksum },
+            select: { id: true },
+          });
+          if (!concurrentCommit) {
+            if (previousObject) {
+              await this.storage.putObject({
+                key,
+                body: previousObject.body,
+                contentType: previousObject.contentType ?? SVG_MIME_TYPE,
+                checksum:
+                  previousObject.checksum ?? createHash('sha256').update(previousObject.body).digest('hex'),
+              });
+            } else {
+              await this.storage.deleteObject(key);
+            }
           }
         } catch {
           this.logger.error('Signature asset metadata compensation failed.');
@@ -138,15 +145,19 @@ export class SignatureAssetsService {
       version.assetSize !== svg.byteLength ||
       version.assetChecksum !== checksum
     ) {
-      await this.prisma.signatureVersion.update({
-        where: { id: version.id },
-        data: {
-          assetKey: key,
-          assetMimeType: SVG_MIME_TYPE,
-          assetSize: svg.byteLength,
-          assetChecksum: checksum,
-        },
-      });
+      try {
+        await this.prisma.signatureVersion.update({
+          where: { id: version.id },
+          data: {
+            assetKey: key,
+            assetMimeType: SVG_MIME_TYPE,
+            assetSize: svg.byteLength,
+            assetChecksum: checksum,
+          },
+        });
+      } catch {
+        throw this.renderFailed();
+      }
     }
 
     await this.recordAudit(userId, signatureId, 'SIGNATURE_ASSET_RENDERED', {
