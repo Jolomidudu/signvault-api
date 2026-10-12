@@ -66,6 +66,7 @@ enum AuditEvent {
   SIGNATURE_VERSION_DUPLICATED
   SIGNATURE_VERSION_SELECTED
   SIGNATURE_VERSION_ARCHIVED
+  SIGNATURE_ASSET_RENDERED
   SIGNATURE_COPIED
   SIGNATURE_EXPORTED
   SIGNATURE_SHARED
@@ -181,6 +182,7 @@ model SignatureVersion {
   assetKey        String?     @db.Text
   assetMimeType   String?     @db.VarChar(100)
   assetSize       Int?
+  assetChecksum   String?     @db.VarChar(64)
   archivedAt      DateTime?
   createdAt       DateTime    @default(now())
 
