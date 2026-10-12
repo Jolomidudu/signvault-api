@@ -8,6 +8,7 @@ import {
   Post,
   Put,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -19,13 +20,17 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
+  ApiProduces,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreateSignatureVersionDto } from './dto/create-signature-version.dto';
 import { ListSignatureVersionsQueryDto } from './dto/list-signature-versions-query.dto';
+import { SignatureAssetExportQueryDto } from './dto/signature-asset-export-query.dto';
+import { SignatureAssetsService } from './signature-assets.service';
 import { SignatureVersionsService } from './signature-versions.service';
 
 @ApiTags('Signature Versions')
@@ -33,7 +38,10 @@ import { SignatureVersionsService } from './signature-versions.service';
 @ApiBearerAuth()
 @Controller('signatures/:signatureId/versions')
 export class SignatureVersionsController {
-  constructor(private readonly versionsService: SignatureVersionsService) {}
+  constructor(
+    private readonly versionsService: SignatureVersionsService,
+    private readonly assetsService: SignatureAssetsService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Create an immutable designer version for an owned signature' })
@@ -126,5 +134,85 @@ export class SignatureVersionsController {
     @Param('versionId') versionId: string,
   ) {
     return this.versionsService.archive(user.id, signatureId, versionId);
+  }
+
+  @Post(':versionId/render')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Render and store the canonical SVG for a saved signature version' })
+  @ApiOkResponse({ description: 'Safe asset metadata; internal object keys are not exposed.' })
+  @ApiBadRequestResponse({ description: 'The route parameters are invalid.' })
+  @ApiUnauthorizedResponse({ description: 'Authentication is missing or invalid.' })
+  @ApiNotFoundResponse({ description: 'The signature or version was not found for this user.' })
+  @ApiConflictResponse({ description: 'A saved version cannot be modified by rendering.' })
+  @ApiParam({ name: 'signatureId', description: 'Parent signature UUID' })
+  @ApiParam({ name: 'versionId', description: 'Saved signature version UUID' })
+  renderAsset(
+    @CurrentUser() user: { id: string },
+    @Param('signatureId') signatureId: string,
+    @Param('versionId') versionId: string,
+  ) {
+    return this.assetsService.render(user.id, signatureId, versionId);
+  }
+
+  @Get(':versionId/asset')
+  @ApiOperation({ summary: 'Retrieve the private canonical SVG for a saved signature version' })
+  @ApiProduces('image/svg+xml')
+  @ApiOkResponse({ description: 'The canonical SVG asset.', schema: { type: 'string', format: 'binary' } })
+  @ApiUnauthorizedResponse({ description: 'Authentication is missing or invalid.' })
+  @ApiNotFoundResponse({ description: 'The signature version or its asset was not found.' })
+  @ApiParam({ name: 'signatureId', description: 'Parent signature UUID' })
+  @ApiParam({ name: 'versionId', description: 'Saved signature version UUID' })
+  async getAsset(
+    @CurrentUser() user: { id: string },
+    @Param('signatureId') signatureId: string,
+    @Param('versionId') versionId: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const asset = await this.assetsService.getAsset(user.id, signatureId, versionId);
+    response.set({
+      'Content-Type': asset.mimeType,
+      'Content-Length': String(asset.size),
+      'Content-Disposition': `attachment; filename="${asset.filename}"`,
+      'Cache-Control': 'private, max-age=300, must-revalidate',
+      ETag: `"${asset.checksum}"`,
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; sandbox",
+    });
+    return asset.body;
+  }
+
+  @Get(':versionId/export')
+  @ApiOperation({ summary: 'Download SVG or a bounded transparent PNG derivative' })
+  @ApiProduces('image/svg+xml', 'image/png')
+  @ApiOkResponse({ description: 'The requested signature image.', schema: { type: 'string', format: 'binary' } })
+  @ApiBadRequestResponse({ description: 'The export format or PNG scale is invalid.' })
+  @ApiUnauthorizedResponse({ description: 'Authentication is missing or invalid.' })
+  @ApiNotFoundResponse({ description: 'The signature version or its canonical SVG was not found.' })
+  @ApiParam({ name: 'signatureId', description: 'Parent signature UUID' })
+  @ApiParam({ name: 'versionId', description: 'Saved signature version UUID' })
+  async exportAsset(
+    @CurrentUser() user: { id: string },
+    @Param('signatureId') signatureId: string,
+    @Param('versionId') versionId: string,
+    @Query() query: SignatureAssetExportQueryDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const asset = await this.assetsService.export(
+      user.id,
+      signatureId,
+      versionId,
+      query.format,
+      query.scale,
+    );
+    response.set({
+      'Content-Type': asset.mimeType,
+      'Content-Length': String(asset.size),
+      'Content-Disposition': `attachment; filename="${asset.filename}"`,
+      'Cache-Control': 'private, max-age=300, must-revalidate',
+      ETag: `"${asset.checksum}"`,
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; sandbox",
+    });
+    return asset.body;
   }
 }
