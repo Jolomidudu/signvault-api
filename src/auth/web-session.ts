@@ -30,7 +30,17 @@ export function assertWebOrigin(request: Request, configService: ConfigService) 
   const origin = request.get('origin');
   const frontendUrl = configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
 
-  if (!origin || origin === 'null' || new URL(origin).origin !== new URL(frontendUrl).origin) {
+  let allowedOrigin: string;
+  let requestOrigin: string;
+
+  try {
+    allowedOrigin = new URL(frontendUrl).origin;
+    requestOrigin = origin ? new URL(origin).origin : '';
+  } catch {
+    throw new ForbiddenException('Origin is not allowed.');
+  }
+
+  if (!origin || origin === 'null' || requestOrigin !== origin || requestOrigin !== allowedOrigin) {
     throw new ForbiddenException('Origin is not allowed.');
   }
 }

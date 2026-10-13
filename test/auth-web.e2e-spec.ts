@@ -35,12 +35,13 @@ describe('Browser auth API (e2e)', () => {
 
   function assertCookieAttributes(setCookie: string | string[]) {
     const header = (Array.isArray(setCookie) ? setCookie[0] : setCookie).toLowerCase();
-    expect(header).toContain('httponly');
-    expect(header).toContain('secure');
-    expect(header).toContain('samesite=lax');
-    expect(header).toContain(`path=${WEB_AUTH_COOKIE_PATH.toLowerCase()}`);
-    expect(header).toMatch(/max-age=6047\d/);
-    expect(header).toContain('expires=');
+    const attributes = header.slice(header.indexOf(';') + 1);
+    expect(attributes).toContain('httponly');
+    expect(attributes).toContain('secure');
+    expect(attributes).toContain('samesite=lax');
+    expect(attributes).toContain(`path=${WEB_AUTH_COOKIE_PATH.toLowerCase()}`);
+    expect(attributes).toMatch(/max-age=60479[9]|max-age=604800/);
+    expect(attributes).toContain('expires=');
   }
 
   beforeAll(async () => {
@@ -149,10 +150,11 @@ describe('Browser auth API (e2e)', () => {
 
     expect(login.body.accessToken).toBeDefined();
     expect(login.body.accessExpiresAt).toBeDefined();
-    expect(login.body).not.toHaveProperty('refreshToken');
+    expect(Object.hasOwn(login.body, 'refreshToken')).toBe(false);
     expect(login.headers['set-cookie']).toBeDefined();
     assertCookieAttributes(login.headers['set-cookie']);
     const firstCookie = cookieValue(login.headers['set-cookie']);
+    expect(firstCookie.startsWith(`${WEB_REFRESH_COOKIE_NAME}=`)).toBe(true);
 
     const firstRefresh = await request(app.getHttpServer())
       .post('/api/v1/auth/web/refresh')
@@ -160,7 +162,7 @@ describe('Browser auth API (e2e)', () => {
       .set('Cookie', firstCookie)
       .expect(201);
     expect(firstRefresh.body.accessToken).toBeDefined();
-    expect(firstRefresh.body).not.toHaveProperty('refreshToken');
+    expect(Object.hasOwn(firstRefresh.body, 'refreshToken')).toBe(false);
     assertCookieAttributes(firstRefresh.headers['set-cookie']);
     const secondCookie = cookieValue(firstRefresh.headers['set-cookie']);
 
@@ -175,7 +177,7 @@ describe('Browser auth API (e2e)', () => {
       .set('Origin', origin)
       .set('Cookie', secondCookie)
       .expect(201);
-    expect(secondRefresh.body).not.toHaveProperty('refreshToken');
+    expect(Object.hasOwn(secondRefresh.body, 'refreshToken')).toBe(false);
     const activeCookie = cookieValue(secondRefresh.headers['set-cookie']);
 
     const logout = await request(app.getHttpServer())
@@ -211,7 +213,7 @@ describe('Browser auth API (e2e)', () => {
       .expect(201);
 
     expect(response.body.accessToken).toBeDefined();
-    expect(response.body).not.toHaveProperty('refreshToken');
+    expect(Object.hasOwn(response.body, 'refreshToken')).toBe(false);
     assertCookieAttributes(response.headers['set-cookie']);
   });
 

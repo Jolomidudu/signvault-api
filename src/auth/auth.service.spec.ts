@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import * as argon2 from 'argon2';
+import { createHash } from 'node:crypto';
 import { AuthService } from './auth.service';
 
 describe('AuthService', () => {
@@ -170,6 +171,7 @@ describe('AuthService', () => {
     prisma.refreshToken.create.mockResolvedValue({ id: 'refresh-2' });
     prisma.auditLog.create.mockResolvedValue({});
 
+    const startedAt = Date.now();
     const result = await service.login(
       { email: 'jane@example.com', password: 'StrongPass123!' },
       '127.0.0.1',
@@ -179,6 +181,16 @@ describe('AuthService', () => {
     expect(result.accessToken).toBe('access-token');
     expect(result.refreshToken).toBeDefined();
     expect(result.user.email).toBe('jane@example.com');
+    expect(result.accessExpiresAt).toBeDefined();
+    expect(Date.parse(result.refreshExpiresAt)).toBeGreaterThanOrEqual(startedAt + 7 * 24 * 60 * 60 * 1000 - 5000);
+    expect(Date.parse(result.refreshExpiresAt)).toBeLessThanOrEqual(Date.now() + 7 * 24 * 60 * 60 * 1000 + 5000);
+    expect(prisma.refreshToken.create).toHaveBeenCalledWith({
+      data: {
+        userId: 'user-3',
+        tokenHash: createHash('sha256').update(result.refreshToken).digest('hex'),
+        expiresAt: expect.any(Date),
+      },
+    });
   });
 
   it('refresh rotation rejects expired or revoked sessions', async () => {
