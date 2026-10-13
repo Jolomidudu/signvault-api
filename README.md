@@ -23,6 +23,14 @@
 
 ## Description
 
+## Browser authentication
+
+Native/programmatic clients continue to use `/api/v1/auth/register`, `login`, `refresh`, and `logout`; their token-body contract is unchanged. Browser clients use `/api/v1/auth/web/register`, `login`, `refresh`, and `logout`. Browser login and registration return the short-lived access token in JSON and set the opaque refresh token only in the `signvault_refresh` HttpOnly cookie. Browser refresh reads that cookie, rotates it, and returns only a new access token. The cookie is host-only by default, scoped to `/api/v1/auth/web`, and expires with the server-side refresh session.
+
+The browser refresh cookie defaults to `SameSite=Lax`, which supports the local `localhost:3000` to `localhost:4000` setup and same-site production subdomains. Set `AUTH_COOKIE_SAME_SITE=none` only when the frontend and API are genuinely cross-site; this forces `Secure`. Cookies are always `Secure` in production. `AUTH_COOKIE_DOMAIN` is optional and should name only the exact deployment host/domain needed. `FRONTEND_URL` is the sole allowed CORS origin and is also checked against the `Origin` header for all browser auth operations, including login, registration, refresh, and logout. Missing and unexpected origins are rejected. This Origin check protects cookie-authenticated requests from cross-site request forgery; it is not a replacement for XSS defenses.
+
+The web client should keep access tokens in memory only. After a page reload, it should call `/api/v1/auth/web/refresh` with credentials to restore a short-lived access token; no browser token persistence is needed. The backend never returns the browser refresh token in JSON.
+
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
 ## Project setup

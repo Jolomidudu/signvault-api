@@ -27,6 +27,7 @@ type AuditEventName =
 export type AuthenticatedResponse = {
   user: ReturnType<UsersService['toPublicUser']>;
   accessToken: string;
+  accessExpiresAt: string;
   refreshToken: string;
   refreshExpiresAt: string;
 };
@@ -63,7 +64,7 @@ export class AuthService {
     }
 
     const amount = Number(match[1]);
-    const unit = match[2] ?? 'm';
+    const unit = match[2] ?? 's';
 
     const lookup: Record<string, number> = {
       s: 1000,
@@ -106,6 +107,8 @@ export class AuthService {
     const accessExpiry = this.configService.get<string>('JWT_ACCESS_EXPIRES_IN') ?? '15m';
     const refreshExpiry = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
 
+    const accessDurationMs = this.parseDurationToMs(accessExpiry, 15 * 60 * 1000);
+    const accessExpiresAt = new Date(Date.now() + accessDurationMs);
     const accessToken = await this.jwtService.signAsync(
       {
         sub: user.id,
@@ -114,7 +117,7 @@ export class AuthService {
       },
       {
         secret: accessSecret,
-        expiresIn: Number(accessExpiry) || 900,
+        expiresIn: Math.max(1, Math.floor(accessDurationMs / 1000)),
       },
     );
 
@@ -135,6 +138,7 @@ export class AuthService {
     return {
       user: this.toSafeUser(user),
       accessToken,
+      accessExpiresAt: accessExpiresAt.toISOString(),
       refreshToken: refreshTokenValue,
       refreshExpiresAt: refreshExpiresAt.toISOString(),
     };
@@ -263,6 +267,23 @@ export class AuthService {
     });
 
     await this.recordAudit(userId, 'USER_LOGOUT', { revokedVia: 'all_tokens' }, ipAddress, userAgent);
+
+    return { success: true, message: 'Logged out successfully.' };
+  }
+
+  async logoutWeb(refreshToken?: string, ipAddress?: string, userAgent?: string) {
+    if (refreshToken) {
+      const tokenHash = this.hashToken(refreshToken);
+      const session = await this.prisma.refreshToken.findUnique({ where: { tokenHash } });
+
+      if (session && !session.revokedAt) {
+        await this.prisma.refreshToken.update({
+          where: { id: session.id },
+          data: { revokedAt: new Date() },
+        });
+        await this.recordAudit(session.userId, 'USER_LOGOUT', { revokedVia: 'web_cookie' }, ipAddress, userAgent);
+      }
+    }
 
     return { success: true, message: 'Logged out successfully.' };
   }
