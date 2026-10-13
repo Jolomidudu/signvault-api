@@ -5,6 +5,7 @@ import { PutObjectInput, StoredObject, StoredObjectInfo } from './storage.types'
 
 const MAX_OBJECT_SIZE = 64 * 1024;
 const OBJECT_KEY_PATTERN = /^users\/[0-9a-f-]{36}\/signatures\/[0-9a-f-]{36}\/versions\/[0-9a-f-]{36}\/signature\.svg$/i;
+const SMOKE_TEST_KEY_PATTERN = /^signvault-tests\/storage-smoke\/[0-9a-f-]{36}\.txt$/i;
 
 @Injectable()
 export class StorageService {
@@ -51,9 +52,10 @@ export class StorageService {
   }
 
   private validateKey(key: string) {
-    if (!OBJECT_KEY_PATTERN.test(key) || key.includes('..')) {
+    if ((!OBJECT_KEY_PATTERN.test(key) && !SMOKE_TEST_KEY_PATTERN.test(key)) || key.includes('..')) {
       throw this.unavailable();
     }
+    return SMOKE_TEST_KEY_PATTERN.test(key) ? 'smoke-test' : 'signature-asset';
   }
 
   private isNotFound(error: unknown) {
@@ -76,8 +78,9 @@ export class StorageService {
   }
 
   async putObject(input: PutObjectInput) {
-    this.validateKey(input.key);
-    if (input.body.byteLength > MAX_OBJECT_SIZE || input.contentType !== 'image/svg+xml') {
+    const keyType = this.validateKey(input.key);
+    const expectedContentType = keyType === 'smoke-test' ? 'text/plain' : 'image/svg+xml';
+    if (input.body.byteLength > MAX_OBJECT_SIZE || input.contentType !== expectedContentType) {
       throw this.unavailable();
     }
 

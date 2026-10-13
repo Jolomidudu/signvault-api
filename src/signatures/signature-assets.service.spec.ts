@@ -1,7 +1,9 @@
 import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { jest } from '@jest/globals';
+import type { Mock } from 'jest-mock';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { PutObjectInput, StoredObject, StoredObjectInfo } from '../storage/storage.types';
 import { SignatureSvgRenderer } from './rendering/signature-svg.renderer';
 import { SignatureAssetsService } from './signature-assets.service';
 
@@ -10,9 +12,21 @@ describe('SignatureAssetsService', () => {
   const signatureId = '22222222-2222-4222-8222-222222222222';
   const versionId = '33333333-3333-4333-8333-333333333333';
   let version: Record<string, unknown>;
-  let prisma: Record<string, any>;
-  let objects: Map<string, { body: Buffer; contentType: string; size: number; checksum: string }>;
-  let storage: Record<string, jest.Mock>;
+  let prisma: {
+    signature: { findFirst: Mock<() => Promise<{ id: string } | null>> };
+    signatureVersion: {
+      findFirst: Mock<(args: { where: Record<string, unknown> }) => Promise<Record<string, unknown> | null>>;
+      update: Mock<(args: { data: Record<string, unknown> }) => Promise<Record<string, unknown>>>;
+    };
+    auditLog: { create: Mock<(args: { data: Record<string, unknown> }) => Promise<Record<string, unknown>>> };
+  };
+  let objects: Map<string, StoredObject & { contentType: string; size: number }>;
+  let storage: {
+    objectExists: Mock<(key: string) => Promise<StoredObjectInfo | null>>;
+    putObject: Mock<(input: PutObjectInput) => Promise<void>>;
+    getObject: Mock<(key: string) => Promise<StoredObject | null>>;
+    deleteObject: Mock<(key: string) => Promise<boolean>>;
+  };
   let service: SignatureAssetsService;
 
   beforeEach(() => {
@@ -38,35 +52,45 @@ describe('SignatureAssetsService', () => {
     };
     objects = new Map();
     prisma = {
-      signature: { findFirst: jest.fn().mockResolvedValue({ id: signatureId }) },
+      signature: {
+        findFirst: jest.fn<() => Promise<{ id: string } | null>>().mockResolvedValue({ id: signatureId }),
+      },
       signatureVersion: {
-        findFirst: jest.fn().mockImplementation(async ({ where }) => {
+        findFirst: jest
+          .fn<(args: { where: Record<string, unknown> }) => Promise<Record<string, unknown> | null>>()
+          .mockImplementation(async ({ where }) => {
           if (where.assetKey) {
             return version.assetKey === where.assetKey && version.assetChecksum === where.assetChecksum
               ? { id: versionId }
               : null;
           }
           return version;
-        }),
-        update: jest.fn().mockImplementation(async ({ data }) => {
+          }),
+        update: jest
+          .fn<(args: { data: Record<string, unknown> }) => Promise<Record<string, unknown>>>()
+          .mockImplementation(async ({ data }) => {
           version = { ...version, ...data };
           return version;
-        }),
+          }),
       },
-      auditLog: { create: jest.fn().mockResolvedValue({}) },
+      auditLog: {
+        create: jest
+          .fn<(args: { data: Record<string, unknown> }) => Promise<Record<string, unknown>>>()
+          .mockResolvedValue({}),
+      },
     };
     storage = {
-      objectExists: jest.fn(async (key: string) => {
+      objectExists: jest.fn<(key: string) => Promise<StoredObjectInfo | null>>(async (key) => {
         const object = objects.get(key);
         return object
           ? { contentType: object.contentType, size: object.size, checksum: object.checksum }
           : null;
       }),
-      putObject: jest.fn(async ({ key, body, contentType, checksum }) => {
+      putObject: jest.fn<(input: PutObjectInput) => Promise<void>>(async ({ key, body, contentType, checksum }) => {
         objects.set(key, { body, contentType, size: body.byteLength, checksum });
       }),
-      getObject: jest.fn(async (key: string) => objects.get(key) ?? null),
-      deleteObject: jest.fn(async (key: string) => objects.delete(key)),
+      getObject: jest.fn<(key: string) => Promise<StoredObject | null>>(async (key) => objects.get(key) ?? null),
+      deleteObject: jest.fn<(key: string) => Promise<boolean>>(async (key) => objects.delete(key)),
     };
     service = new SignatureAssetsService(
       prisma as unknown as PrismaService,

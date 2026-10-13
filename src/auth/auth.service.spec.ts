@@ -40,7 +40,7 @@ describe('AuthService', () => {
     };
 
     jwtService = {
-      signAsync: jest.fn().mockResolvedValue('access-token'),
+      signAsync: jest.fn<() => Promise<string>>().mockResolvedValue('access-token'),
     };
 
     configService = {
@@ -57,7 +57,18 @@ describe('AuthService', () => {
 
     usersService = {
       findById: jest.fn(),
-      toPublicUser: jest.fn((user) => ({
+      toPublicUser: jest.fn((user: {
+        id: string;
+        firstName: string;
+        lastName: string;
+        displayName: string;
+        email: string;
+        emailVerified: boolean;
+        accountStatus: string;
+        avatarUrl: string | null;
+        createdAt: Date;
+        role: string;
+      }) => ({
         id: user.id,
         firstName: user.firstName,
         lastName: user.lastName,

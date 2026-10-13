@@ -1,5 +1,6 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { jest } from '@jest/globals';
+import type { Mock } from 'jest-mock';
 import { ConfigService } from '@nestjs/config';
 import { StorageService } from './storage.service';
 
@@ -15,12 +16,14 @@ describe('StorageService', () => {
     NEON_OBJECT_STORAGE_BUCKET: 'private-test-bucket',
   };
   let service: StorageService;
-  let send: jest.SpyInstance;
+  let send: Mock<(command: unknown) => Promise<unknown>>;
 
   beforeEach(() => {
     const config = { get: (key: string) => values[key] } as unknown as ConfigService;
     service = new StorageService(config);
-    send = jest.spyOn(S3Client.prototype, 'send').mockResolvedValue({} as never);
+    send = jest
+      .spyOn(S3Client.prototype, 'send')
+      .mockResolvedValue({} as never) as unknown as Mock<(command: unknown) => Promise<unknown>>;
   });
 
   afterEach(() => {
@@ -89,5 +92,17 @@ describe('StorageService', () => {
       service.putObject({ key: objectKey, body: Buffer.from('x'), contentType: 'image/png', checksum: 'e' }),
     ).rejects.toThrow();
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it('allows only the isolated text smoke-test prefix for non-SVG objects', async () => {
+    const key = 'signvault-tests/storage-smoke/44444444-4444-4444-8444-444444444444.txt';
+    await service.putObject({ key, body: Buffer.from('test'), contentType: 'text/plain', checksum: 'f' });
+    expect((send.mock.calls[0][0] as PutObjectCommand).input).toMatchObject({ Key: key, ContentType: 'text/plain' });
+
+    await service.deleteObject(key);
+    expect(send.mock.calls[1][0]).toBeInstanceOf(DeleteObjectCommand);
+    await expect(
+      service.putObject({ key, body: Buffer.from('test'), contentType: 'image/svg+xml', checksum: 'f' }),
+    ).rejects.toThrow();
   });
 });

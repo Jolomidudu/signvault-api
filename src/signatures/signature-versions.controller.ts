@@ -21,6 +21,7 @@ import {
   ApiOperation,
   ApiParam,
   ApiProduces,
+  ApiResponse,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -143,7 +144,8 @@ export class SignatureVersionsController {
   @ApiBadRequestResponse({ description: 'The route parameters are invalid.' })
   @ApiUnauthorizedResponse({ description: 'Authentication is missing or invalid.' })
   @ApiNotFoundResponse({ description: 'The signature or version was not found for this user.' })
-  @ApiConflictResponse({ description: 'A saved version cannot be modified by rendering.' })
+  @ApiResponse({ status: 500, description: 'The saved design could not be rendered safely.' })
+  @ApiResponse({ status: 503, description: 'Private object storage is unavailable.' })
   @ApiParam({ name: 'signatureId', description: 'Parent signature UUID' })
   @ApiParam({ name: 'versionId', description: 'Saved signature version UUID' })
   renderAsset(
@@ -160,6 +162,8 @@ export class SignatureVersionsController {
   @ApiOkResponse({ description: 'The canonical SVG asset.', schema: { type: 'string', format: 'binary' } })
   @ApiUnauthorizedResponse({ description: 'Authentication is missing or invalid.' })
   @ApiNotFoundResponse({ description: 'The signature version or its asset was not found.' })
+  @ApiResponse({ status: 500, description: 'Stored asset integrity validation failed.' })
+  @ApiResponse({ status: 503, description: 'Private object storage is unavailable.' })
   @ApiParam({ name: 'signatureId', description: 'Parent signature UUID' })
   @ApiParam({ name: 'versionId', description: 'Saved signature version UUID' })
   async getAsset(
@@ -188,6 +192,8 @@ export class SignatureVersionsController {
   @ApiBadRequestResponse({ description: 'The export format or PNG scale is invalid.' })
   @ApiUnauthorizedResponse({ description: 'Authentication is missing or invalid.' })
   @ApiNotFoundResponse({ description: 'The signature version or its canonical SVG was not found.' })
+  @ApiResponse({ status: 500, description: 'The requested image could not be generated or verified.' })
+  @ApiResponse({ status: 503, description: 'Private object storage is unavailable.' })
   @ApiParam({ name: 'signatureId', description: 'Parent signature UUID' })
   @ApiParam({ name: 'versionId', description: 'Saved signature version UUID' })
   async exportAsset(

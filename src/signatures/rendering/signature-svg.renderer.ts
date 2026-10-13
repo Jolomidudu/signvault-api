@@ -17,8 +17,21 @@ export type RenderableSignatureVersion = {
 };
 
 function escapeXml(value: string) {
-  return value
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '')
+  const validXmlCharacters = Array.from(value)
+    .filter((character) => {
+      const codePoint = character.codePointAt(0)!;
+      return (
+        codePoint === 0x9 ||
+        codePoint === 0xa ||
+        codePoint === 0xd ||
+        (codePoint >= 0x20 && codePoint <= 0xd7ff) ||
+        (codePoint >= 0xe000 && codePoint <= 0xfffd) ||
+        (codePoint >= 0x10000 && codePoint <= 0x10ffff)
+      );
+    })
+    .join('');
+
+  return validXmlCharacters
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
-import { Prisma, SignatureVersion } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import sharp from 'sharp';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
@@ -10,20 +10,6 @@ const SVG_MIME_TYPE = 'image/svg+xml';
 const PNG_MIME_TYPE = 'image/png';
 const MAX_SVG_SIZE = 64 * 1024;
 const MAX_PNG_SIZE = 5 * 1024 * 1024;
-
-type AssetVersion = Pick<
-  SignatureVersion,
-  | 'id'
-  | 'signatureId'
-  | 'versionNumber'
-  | 'displayText'
-  | 'style'
-  | 'design'
-  | 'assetKey'
-  | 'assetMimeType'
-  | 'assetSize'
-  | 'assetChecksum'
->;
 
 @Injectable()
 export class SignatureAssetsService {

@@ -53,6 +53,30 @@ Saved versions are immutable. Use `POST /api/v1/signatures/:signatureId/versions
 
 Archiving a version is soft: it preserves designer data and historical references. Archiving the current version clears the current selection; archived versions cannot be selected or duplicated. Full history is available from `GET /api/v1/signatures/:signatureId/versions`; signature detail and vault list responses include only the current-version preview and version count.
 
+## Signature visual assets
+
+The validated `SignatureVersion` designer JSON remains the editable source of truth. `POST /api/v1/signatures/:signatureId/versions/:versionId/render` renders only that saved version into a server-generated canonical SVG and stores it in Neon Object Storage. The renderer accepts allowlisted fonts and numeric properties, escapes display text, emits no client-provided markup, stylesheets, scripts, images, or external references, and keeps the background transparent. Fonts use local generic/fallback families; font files are not embedded, so exact script-font appearance depends on the viewer's installed fonts.
+
+SVG objects use deterministic server-generated keys and SHA-256 checksums for integrity/consistency checks only. This checksum is not a document hash or digital signature. Re-rendering identical saved data reuses the same object and updates metadata only if needed. SVG is served through authenticated API routes from a private bucket; permanent public URLs and object keys are not returned. Archived versions and signatures retain their objects.
+
+PNG is an on-demand transparent derivative of the stored canonical SVG, generated with Sharp at fixed 1200x300 dimensions and scale presets 1x, 2x, or 3x. PNG derivatives are not persisted. SVG and PNG exports are available through `GET /api/v1/signatures/:signatureId/versions/:versionId/export?format=svg|png`; the dedicated `/asset` route returns the canonical SVG.
+
+### Neon Object Storage configuration
+
+Create a **private** bucket for the API's Neon project branch and a branch-scoped Neon credential with `storage:read` and `storage:write` scopes. Neon currently documents the AWS S3-compatible API; the backend uses `@aws-sdk/client-s3` with path-style addressing. Configure these values in the API's local `.env` or deployment secret store only:
+
+- `AWS_ENDPOINT_URL_S3`: the branch storage endpoint from Neon
+- `AWS_ACCESS_KEY_ID`: Neon credential `token_id`
+- `AWS_SECRET_ACCESS_KEY`: Neon credential `s3_secret_access_key`
+- `AWS_REGION`: the branch storage region
+- `NEON_OBJECT_STORAGE_BUCKET`: the private bucket name
+
+Blank placeholders are listed in `.env.example`. Do not commit credentials or put them in the web or mobile applications. When these values are absent, API startup and unrelated endpoints still work; asset operations return a generic storage-unavailable error. No live storage is used by unit or E2E tests: the provider is mocked. Provisioning the bucket and credentials is a manual Neon Console/CLI step.
+
+The checked-in migration adds the asset checksum column and render audit enum value. Apply it with `npx prisma migrate deploy` only after verifying `DATABASE_URL` targets the intended database. The migration was not applied as part of this implementation.
+
+SVG/PNG files are visual representations only. They do not prove document integrity and are not cryptographic digital signatures; inserting an image into a document does not make that document tamper-proof.
+
 ## Compile and run the project
 
 ```bash
