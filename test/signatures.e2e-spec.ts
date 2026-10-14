@@ -604,6 +604,10 @@ describe('Signature Vault API (e2e)', () => {
     expect(asset.headers['content-type']).toContain('image/svg+xml');
     expect(asset.headers['content-disposition']).toContain('attachment; filename="signature-1.svg"');
     expect(asset.headers['cache-control']).toContain('private');
+    const assetBytes = Buffer.isBuffer(asset.body) ? asset.body : Buffer.from(asset.text ?? '');
+    expect(assetBytes.byteLength).toBeGreaterThan(0);
+    expect(assetBytes.toString('utf8')).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
+    expect(assetBytes.toString('utf8')).toContain('Saved Visual Name');
 
     await request(app.getHttpServer())
       .get(assetPath)

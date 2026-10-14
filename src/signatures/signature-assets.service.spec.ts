@@ -112,6 +112,20 @@ describe('SignatureAssetsService', () => {
         data: expect.objectContaining({ assetMimeType: 'image/svg+xml', assetChecksum: expect.any(String) }),
       }),
     );
+
+    const asset = await service.getAsset(userId, signatureId, versionId);
+    expect(asset.mimeType).toBe('image/svg+xml');
+    expect(asset.body.byteLength).toBeGreaterThan(0);
+    expect(asset.body.toString('utf8')).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
+    expect(asset.body.toString('utf8')).toContain('Saved Name');
+  });
+
+  it('does not read private storage when the signature is not owned', async () => {
+    await service.render(userId, signatureId, versionId);
+    prisma.signature.findFirst.mockResolvedValue(null);
+
+    await expect(service.getAsset(userId, signatureId, versionId)).rejects.toBeInstanceOf(NotFoundException);
+    expect(storage.getObject).not.toHaveBeenCalled();
   });
 
   it('does not access storage when the parent signature is not owned', async () => {
