@@ -9,6 +9,7 @@ import {
   Put,
   Query,
   Res,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -171,7 +172,7 @@ export class SignatureVersionsController {
     @Param('signatureId') signatureId: string,
     @Param('versionId') versionId: string,
     @Res({ passthrough: true }) response: Response,
-  ) {
+  ): Promise<StreamableFile> {
     const asset = await this.assetsService.getAsset(user.id, signatureId, versionId);
     response.set({
       'Content-Type': asset.mimeType,
@@ -182,7 +183,7 @@ export class SignatureVersionsController {
       'X-Content-Type-Options': 'nosniff',
       'Content-Security-Policy': "default-src 'none'; sandbox",
     });
-    return asset.body;
+    return new StreamableFile(asset.body);
   }
 
   @Get(':versionId/export')
@@ -202,7 +203,7 @@ export class SignatureVersionsController {
     @Param('versionId') versionId: string,
     @Query() query: SignatureAssetExportQueryDto,
     @Res({ passthrough: true }) response: Response,
-  ) {
+  ): Promise<StreamableFile> {
     const asset = await this.assetsService.export(
       user.id,
       signatureId,
@@ -219,6 +220,6 @@ export class SignatureVersionsController {
       'X-Content-Type-Options': 'nosniff',
       'Content-Security-Policy': "default-src 'none'; sandbox",
     });
-    return asset.body;
+    return new StreamableFile(asset.body);
   }
 }
