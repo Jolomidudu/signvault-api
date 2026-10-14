@@ -36,6 +36,7 @@
     "@nestjs/throttler": "^6.7.1",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
+    "@resvg/resvg-js": "2.6.2",
     "@types/cors": "^2.8.19",
     "argon2": "^0.45.1",
     "class-transformer": "^0.5.1",

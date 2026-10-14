@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto';
 import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
+import sharp from 'sharp';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { PutObjectInput, StoredObject, StoredObjectInfo } from '../storage/storage.types';
@@ -158,14 +160,70 @@ describe('SignatureAssetsService', () => {
     await expect(service.render(userId, signatureId, versionId)).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
-  it('exports a transparent PNG at a bounded scale and audits the export', async () => {
+  it('exports valid transparent PNGs at each supported scale and audits each export', async () => {
     await service.render(userId, signatureId, versionId);
-    const png = await service.export(userId, signatureId, versionId, 'png', 2);
+    const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
-    expect(png.mimeType).toBe('image/png');
-    expect(png.body.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    for (const scale of [1, 2, 3]) {
+      const png = await service.export(userId, signatureId, versionId, 'png', scale);
+      const metadata = await sharp(png.body).metadata();
+
+      expect(png.mimeType).toBe('image/png');
+      expect(png.body.subarray(0, 8)).toEqual(pngSignature);
+      expect(png.body.byteLength).toBeGreaterThan(100);
+      expect(metadata).toMatchObject({ format: 'png', width: 1200 * scale, height: 300 * scale });
+    }
+
     expect(prisma.auditLog.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ event: 'SIGNATURE_EXPORTED' }) }),
     );
+  }, 15000);
+
+  it('rasterizes recognizable signature text with stable pixels at each scale', async () => {
+    version = {
+      ...version,
+      displayText: 'Jolosticks',
+      style: 'ELEGANT',
+      design: { ...(version.design as Record<string, unknown>), fontFamily: 'script' },
+    };
+    await service.render(userId, signatureId, versionId);
+
+    const pixelHashes: string[] = [];
+    for (const scale of [1, 2, 3]) {
+      const png = await service.export(userId, signatureId, versionId, 'png', scale);
+      const pixels = await sharp(png.body).ensureAlpha().raw().toBuffer();
+      pixelHashes.push(createHash('sha256').update(pixels).digest('hex'));
+    }
+
+    expect(pixelHashes).toEqual([
+      'a45f1aab9596bd4cf2d116b4e980d65ba968a3de9b89e9e123df48ce444abf7f',
+      '7773de805bcda7f1bb6b14ef3e71e422c3bcb459a88ea2543b9e3387600d43c3',
+      '004b501c467787cae2a393bff09662cd047482c0e5cd00fa498f67eb3c0c9778',
+    ]);
+  }, 15000);
+
+  it('resolves every supported font family from bundled files', async () => {
+    const fontCases = [
+      { fontFamily: 'serif', style: 'CLASSIC', pixelHash: '6655d7a63f8238cf71391b37cca6843d8dfc18e45fd7ba9d3cf2edbebaec593c' },
+      { fontFamily: 'script', style: 'ELEGANT', pixelHash: 'a45f1aab9596bd4cf2d116b4e980d65ba968a3de9b89e9e123df48ce444abf7f' },
+      { fontFamily: 'modern-script', style: 'MODERN', pixelHash: 'a45f1aab9596bd4cf2d116b4e980d65ba968a3de9b89e9e123df48ce444abf7f' },
+      { fontFamily: 'sans-serif', style: 'MINIMAL', pixelHash: '6408b17cb40665d7bc77eb83cfad7edc46a9e46be90bcf030bb177b57168eb0e' },
+    ];
+    const pixelHashes: string[] = [];
+
+    for (const fontCase of fontCases) {
+      version = {
+        ...version,
+        displayText: 'Jolosticks',
+        style: fontCase.style,
+        design: { ...(version.design as Record<string, unknown>), fontFamily: fontCase.fontFamily },
+      };
+      await service.render(userId, signatureId, versionId);
+      const png = await service.export(userId, signatureId, versionId, 'png', 1);
+      const pixels = await sharp(png.body).ensureAlpha().raw().toBuffer();
+      pixelHashes.push(createHash('sha256').update(pixels).digest('hex'));
+    }
+
+    expect(pixelHashes).toEqual(fontCases.map(({ pixelHash }) => pixelHash));
   }, 15000);
 });

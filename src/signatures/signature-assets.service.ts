@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 import { Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import sharp from 'sharp';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { rasterizeSignatureSvg } from './signature-png.rasterizer';
 import { SignatureSvgRenderer } from './rendering/signature-svg.renderer';
 
 const SVG_MIME_TYPE = 'image/svg+xml';
@@ -212,10 +212,7 @@ export class SignatureAssetsService {
 
     if (format === 'png') {
       try {
-        body = await sharp(asset.body, { limitInputPixels: 1200 * 300 })
-          .resize({ width: 1200 * scale, height: 300 * scale, fit: 'fill' })
-          .png({ compressionLevel: 9 })
-          .toBuffer();
+        body = rasterizeSignatureSvg(asset.body, scale);
       } catch {
         throw this.renderFailed();
       }
