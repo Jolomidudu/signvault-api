@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, createPublicKey, randomUUID } from 'node:crypto';
 import {
   ConflictException,
   ForbiddenException,
@@ -21,6 +21,7 @@ import { PrismaService } from '../prisma/prisma.service';
 const MAX_PUBLIC_KEY_BYTES = 16 * 1024;
 const ALGORITHM_PROFILE_PATTERN = /^[A-Z0-9][A-Z0-9._-]{0,99}$/;
 type KeyTransitionTarget = Extract<SigningKeyStatus, 'REVOKED' | 'COMPROMISED' | 'DISABLED'>;
+const PROFILE_KEY_TYPES: Record<string, string> = { ED25519_V1: 'ed25519' };
 
 const ALLOWED_KEY_TRANSITIONS: Record<SigningKeyStatus, SigningKeyStatus[]> = {
   PENDING: ['ACTIVE', 'REVOKED', 'COMPROMISED', 'DISABLED'],
@@ -143,7 +144,7 @@ export class SigningDomainService {
   }
 
   async createPendingKey(userId: string, input: CreateSigningKeyMetadata) {
-    this.validateKeyMetadata(input);
+    const publicKey = this.validateKeyMetadata(input);
 
     try {
       return await this.prisma.$transaction(async (transaction) => {
@@ -157,7 +158,7 @@ export class SigningDomainService {
           select: { keyVersion: true },
         });
         const keyVersion = (latestKey?.keyVersion ?? 0) + 1;
-        const fingerprint = createHash('sha256').update(input.publicKey).digest('hex');
+        const fingerprint = createHash('sha256').update(publicKey).digest('hex');
         const key = await transaction.signingKey.create({
           data: {
             signingIdentityId: identity.id,
@@ -165,7 +166,7 @@ export class SigningDomainService {
             algorithmProfile: input.algorithmProfile,
             provider: input.provider,
             providerKeyReference: input.providerKeyReference.trim(),
-            publicKey: Uint8Array.from(input.publicKey),
+            publicKey: Uint8Array.from(publicKey),
             publicKeyFormat: input.publicKeyFormat,
             fingerprint,
           },
@@ -173,7 +174,7 @@ export class SigningDomainService {
         await this.createEvent(transaction, {
           signingIdentityId: identity.id,
           signingKeyId: key.id,
-          eventType: SigningKeyEventType.KEY_PROVISIONED,
+          eventType: SigningKeyEventType.KEY_METADATA_RECORDED,
           actor: { type: SigningActorType.USER, userId },
           metadata: { keyVersion },
         });
@@ -198,6 +199,12 @@ export class SigningDomainService {
         code: 'INVALID_SIGNING_ALGORITHM_PROFILE',
       });
     }
+    if (!PROFILE_KEY_TYPES[input.algorithmProfile]) {
+      throw new UnprocessableEntityException({
+        message: 'Unsupported signing algorithm profile.',
+        code: 'UNSUPPORTED_SIGNING_ALGORITHM_PROFILE',
+      });
+    }
     if (!input.providerKeyReference.trim() || input.providerKeyReference.length > 512) {
       throw new UnprocessableEntityException({
         message: 'Invalid provider key reference.',
@@ -218,6 +225,24 @@ export class SigningDomainService {
       throw new UnprocessableEntityException({
         message: 'Unsupported public-key format.',
         code: 'UNSUPPORTED_PUBLIC_KEY_FORMAT',
+      });
+    }
+
+    try {
+      const parsedPublicKey = createPublicKey({ key: input.publicKey, format: 'der', type: 'spki' });
+      const canonicalPublicKey = parsedPublicKey.export({ format: 'der', type: 'spki' });
+      if (
+        !Buffer.isBuffer(canonicalPublicKey) ||
+        !canonicalPublicKey.equals(input.publicKey) ||
+        parsedPublicKey.asymmetricKeyType !== PROFILE_KEY_TYPES[input.algorithmProfile]
+      ) {
+        throw new Error('Non-canonical SPKI data');
+      }
+      return canonicalPublicKey;
+    } catch {
+      throw new UnprocessableEntityException({
+        message: 'Public-key material is not canonical SPKI DER.',
+        code: 'INVALID_PUBLIC_KEY_FORMAT',
       });
     }
   }

@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
-import { jest } from '@jest/globals';
 import type { PrismaService } from '../prisma/prisma.service';
 import { SigningDomainService, type CreateSigningKeyMetadata } from './signing-domain.service';
 
@@ -183,12 +182,15 @@ function createHarness() {
   };
 }
 
-function keyMetadata(providerKeyReference: string, publicKey: number[] = [1, 2, 3]): CreateSigningKeyMetadata {
+function keyMetadata(providerKeyReference: string, publicKeyMarker = 1): CreateSigningKeyMetadata {
   return {
     algorithmProfile: 'ED25519_V1',
     provider: 'AWS_KMS',
     providerKeyReference,
-    publicKey: Buffer.from(publicKey),
+    publicKey: Buffer.concat([
+      Buffer.from('302a300506032b6570032100', 'hex'),
+      Buffer.alloc(32, publicKeyMarker),
+    ]),
     publicKeyFormat: 'SPKI_DER',
   };
 }
@@ -216,11 +218,11 @@ describe('SigningDomainService', () => {
     const harness = createHarness();
     await harness.service.createIdentity('user-1');
     const first = await harness.service.createPendingKey('user-1', keyMetadata('kms-key-1'));
-    const second = await harness.service.createPendingKey('user-1', keyMetadata('kms-key-2', [4, 5, 6]));
+    const second = await harness.service.createPendingKey('user-1', keyMetadata('kms-key-2', 2));
 
     expect([first.keyVersion, second.keyVersion]).toEqual([1, 2]);
     expect(first.fingerprint).toMatch(/^[0-9a-f]{64}$/);
-    expect(first.publicKey).toEqual(Uint8Array.from([1, 2, 3]));
+    expect(first.publicKey).toEqual(Uint8Array.from(keyMetadata('kms-key-1').publicKey));
     expect(Object.keys(first)).not.toEqual(expect.arrayContaining([
       'privateKey', 'encryptedPrivateKey', 'privateKeyCiphertext', 'wrappedPrivateKey', 'dataEncryptionKey',
       'privateJwk', 'seed', 'mnemonic', 'secretKeyBytes',
@@ -234,16 +236,38 @@ describe('SigningDomainService', () => {
 
     await expect(harness.service.createPendingKey('user-1', keyMetadata('kms-key-2')))
       .rejects.toBeInstanceOf(ConflictException);
-    await expect(harness.service.createPendingKey('user-1', keyMetadata('kms-key-1', [8, 9, 10])))
+    await expect(harness.service.createPendingKey('user-1', keyMetadata('kms-key-1', 2)))
       .rejects.toBeInstanceOf(ConflictException);
     expect(harness.state().keys).toHaveLength(1);
+  });
+
+  it('rejects malformed public-key encoding before persistence', async () => {
+    const harness = createHarness();
+    await harness.service.createIdentity('user-1');
+
+    await expect(harness.service.createPendingKey('user-1', {
+      ...keyMetadata('kms-key-invalid'),
+      publicKey: Buffer.from([1, 2, 3]),
+    })).rejects.toMatchObject({ response: { code: 'INVALID_PUBLIC_KEY_FORMAT' } });
+    expect(harness.state().keys).toHaveLength(0);
+  });
+
+  it('rejects unsupported algorithm profiles before persistence', async () => {
+    const harness = createHarness();
+    await harness.service.createIdentity('user-1');
+
+    await expect(harness.service.createPendingKey('user-1', {
+      ...keyMetadata('kms-key-unsupported'),
+      algorithmProfile: 'UNKNOWN_V1',
+    })).rejects.toMatchObject({ response: { code: 'UNSUPPORTED_SIGNING_ALGORITHM_PROFILE' } });
+    expect(harness.state().keys).toHaveLength(0);
   });
 
   it('rotates atomically, preserves historical public keys, and leaves one active key', async () => {
     const harness = createHarness();
     await harness.service.createIdentity('user-1');
     const oldKey = await harness.service.createPendingKey('user-1', keyMetadata('kms-key-1'));
-    const newKey = await harness.service.createPendingKey('user-1', keyMetadata('kms-key-2', [4, 5, 6]));
+    const newKey = await harness.service.createPendingKey('user-1', keyMetadata('kms-key-2', 2));
 
     await harness.service.activateOrRotatePendingKey('user-1', oldKey.id);
     await harness.service.activateOrRotatePendingKey('user-1', newKey.id);
@@ -252,7 +276,7 @@ describe('SigningDomainService', () => {
     expect(keys.filter((key) => key.status === 'ACTIVE')).toHaveLength(1);
     expect(keys.find((key) => key.id === oldKey.id)).toMatchObject({
       status: 'ROTATED',
-      publicKey: Uint8Array.from([1, 2, 3]),
+      publicKey: Uint8Array.from(keyMetadata('kms-key-1').publicKey),
     });
     expect(keys.find((key) => key.id === newKey.id)?.status).toBe('ACTIVE');
     expect(harness.state().events).toEqual(expect.arrayContaining([
@@ -265,7 +289,7 @@ describe('SigningDomainService', () => {
     const harness = createHarness();
     await harness.service.createIdentity('user-1');
     const revoked = await harness.service.createPendingKey('user-1', keyMetadata('kms-key-1'));
-    const compromised = await harness.service.createPendingKey('user-1', keyMetadata('kms-key-2', [4, 5, 6]));
+    const compromised = await harness.service.createPendingKey('user-1', keyMetadata('kms-key-2', 2));
     await harness.service.activateOrRotatePendingKey('user-1', compromised.id);
 
     await harness.service.revokeKey('user-1', revoked.id);
@@ -274,11 +298,11 @@ describe('SigningDomainService', () => {
 
     expect(harness.state().keys.find((key) => key.id === revoked.id)).toMatchObject({
       status: 'REVOKED',
-      publicKey: Uint8Array.from([1, 2, 3]),
+      publicKey: Uint8Array.from(keyMetadata('kms-key-1').publicKey),
     });
     expect(harness.state().keys.find((key) => key.id === compromised.id)).toMatchObject({
       status: 'COMPROMISED',
-      publicKey: Uint8Array.from([4, 5, 6]),
+      publicKey: Uint8Array.from(keyMetadata('kms-key-2', 2).publicKey),
     });
   });
 
@@ -308,17 +332,24 @@ describe('SigningDomainService', () => {
 
   it('defines the database-enforced version, fingerprint, provider-reference, and one-active-key constraints', () => {
     const migration = readFileSync(resolve(process.cwd(), 'prisma/migrations/20261015000000_add_signing_identity_foundation/migration.sql'), 'utf8');
+    const correctiveMigration = readFileSync(resolve(process.cwd(), 'prisma/migrations/20261015100000_rename_signing_key_metadata_event/migration.sql'), 'utf8');
     expect(migration).toContain('CHECK ("keyVersion" > 0)');
     expect(migration).toContain('"SigningKey_signingIdentityId_keyVersion_key"');
     expect(migration).toContain('"SigningKey_fingerprint_key"');
     expect(migration).toContain('"SigningKey_provider_providerKeyReference_key"');
     expect(migration).toContain('WHERE "status" = \'ACTIVE\'');
     expect(migration).not.toMatch(/\bDROP\s+(TABLE|COLUMN)\b/i);
+    expect(correctiveMigration.trim().replace(/\r\n/g, '\n')).toBe(
+      'ALTER TYPE "SigningKeyEventType"\n  RENAME VALUE \'KEY_PROVISIONED\' TO \'KEY_METADATA_RECORDED\';',
+    );
+    expect(correctiveMigration).not.toMatch(/\bDROP\s+(TABLE|COLUMN|TYPE)\b/i);
   });
 
   it('keeps private-key material out of the persistence schema', () => {
     const schema = readFileSync(resolve(process.cwd(), 'prisma/schema.prisma'), 'utf8');
     expect(schema).not.toMatch(/privateKey|encryptedPrivateKey|privateKeyCiphertext|wrappedPrivateKey|dataEncryptionKey|privateJwk|mnemonic|secretKeyBytes/i);
+    expect(schema).toContain('KEY_METADATA_RECORDED');
+    expect(schema).not.toContain('KEY_PROVISIONED');
     expect(schema).toContain('assetChecksum');
     expect(schema).toContain('model SignatureVersion');
     expect(schema).toContain('model VerificationRecord');
