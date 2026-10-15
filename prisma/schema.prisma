@@ -74,6 +74,69 @@ enum AuditEvent {
   SIGNATURE_VERIFIED
 }
 
+enum SigningIdentityStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum SigningKeyStatus {
+  PENDING
+  ACTIVE
+  ROTATED
+  REVOKED
+  COMPROMISED
+  DISABLED
+}
+
+enum SigningProvider {
+  AWS_KMS
+}
+
+enum SigningPublicKeyFormat {
+  SPKI_DER
+}
+
+enum SigningKeyEventType {
+  IDENTITY_CREATED
+  IDENTITY_SUSPENDED
+  IDENTITY_REACTIVATED
+  IDENTITY_CLOSED
+  KEY_PROVISIONING_REQUESTED
+  KEY_PROVISIONED
+  KEY_ACTIVATED
+  KEY_ROTATED
+  KEY_ROTATED_OUT
+  KEY_REVOKED
+  KEY_COMPROMISED
+  KEY_DISABLED
+  KEY_PROVISIONING_FAILED
+  KEY_OPERATION_REQUESTED
+  KEY_OPERATION_COMPLETED
+  KEY_OPERATION_FAILED
+  KEY_OPERATION_REQUIRES_RECONCILIATION
+}
+
+enum SigningActorType {
+  USER
+  SYSTEM
+  ADMIN
+}
+
+enum SigningKeyOperationType {
+  PROVISION_KEY
+  DISABLE_KEY
+  RECONCILE_KEY
+}
+
+enum SigningKeyOperationStatus {
+  PENDING
+  IN_PROGRESS
+  SUCCEEDED
+  FAILED
+  REQUIRES_RECONCILIATION
+}
+
 model User {
   id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   email         String        @unique @db.VarChar(320)
@@ -95,6 +158,8 @@ model User {
   refreshTokens           RefreshToken[]
   passwordResetTokens     PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
+  signingIdentity         SigningIdentity?
+  signingKeyEvents        SigningKeyEvent[]        @relation("SigningEventActor")
 }
 
 model RefreshToken {
@@ -148,23 +213,23 @@ model EmailVerificationToken {
 }
 
 model Signature {
-  id        String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId    String           @db.Uuid
-  name      String           @db.VarChar(160)
-  category  SignatureCategory
-  status    SignatureStatus
-  expiresAt DateTime?
+  id               String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String            @db.Uuid
+  name             String            @db.VarChar(160)
+  category         SignatureCategory
+  status           SignatureStatus
+  expiresAt        DateTime?
   currentVersionId String?           @db.Uuid
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
-  user                 User               @relation(fields: [userId], references: [id], onDelete: Restrict)
-  versions             SignatureVersion[]
-  currentVersion       SignatureVersion?  @relation("CurrentSignatureVersion", fields: [id, currentVersionId], references: [signatureId, id], onDelete: Restrict)
-  usages               SignatureUsage[]
-  revocations          Revocation[]
-  verificationRecords  VerificationRecord[]
-  auditLogs            AuditLog[]
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  versions            SignatureVersion[]
+  currentVersion      SignatureVersion?    @relation("CurrentSignatureVersion", fields: [id, currentVersionId], references: [signatureId, id], onDelete: Restrict)
+  usages              SignatureUsage[]
+  revocations         Revocation[]
+  verificationRecords VerificationRecord[]
+  auditLogs           AuditLog[]
 
   @@index([userId])
   @@index([status])
@@ -173,22 +238,22 @@ model Signature {
 }
 
 model SignatureVersion {
-  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  signatureId     String      @db.Uuid
-  versionNumber   Int
-  style           String      @db.VarChar(100)
-  displayText     String      @db.VarChar(500)
-  design          Json        @default("{}")
-  assetKey        String?     @db.Text
-  assetMimeType   String?     @db.VarChar(100)
-  assetSize       Int?
-  assetChecksum   String?     @db.VarChar(64)
-  archivedAt      DateTime?
-  createdAt       DateTime    @default(now())
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  signatureId   String    @db.Uuid
+  versionNumber Int
+  style         String    @db.VarChar(100)
+  displayText   String    @db.VarChar(500)
+  design        Json      @default("{}")
+  assetKey      String?   @db.Text
+  assetMimeType String?   @db.VarChar(100)
+  assetSize     Int?
+  assetChecksum String?   @db.VarChar(64)
+  archivedAt    DateTime?
+  createdAt     DateTime  @default(now())
 
-  signature        Signature       @relation(fields: [signatureId], references: [id], onDelete: Restrict)
-  selectedBy       Signature[]     @relation("CurrentSignatureVersion")
-  usages           SignatureUsage[]
+  signature           Signature            @relation(fields: [signatureId], references: [id], onDelete: Restrict)
+  selectedBy          Signature[]          @relation("CurrentSignatureVersion")
+  usages              SignatureUsage[]
   verificationRecords VerificationRecord[]
 
   @@unique([signatureId, versionNumber])
@@ -198,19 +263,19 @@ model SignatureVersion {
 }
 
 model SignatureUsage {
-  id               String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  signatureId      String              @db.Uuid
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  signatureId        String             @db.Uuid
   signatureVersionId String?            @db.Uuid
-  userId           String              @db.Uuid
-  usageType        SignatureUsageType
-  externalReference String?            @db.Text
-  expiresAt        DateTime?
-  revokedAt        DateTime?
-  createdAt        DateTime            @default(now())
+  userId             String             @db.Uuid
+  usageType          SignatureUsageType
+  externalReference  String?            @db.Text
+  expiresAt          DateTime?
+  revokedAt          DateTime?
+  createdAt          DateTime           @default(now())
 
-  signature          Signature        @relation(fields: [signatureId], references: [id], onDelete: Restrict)
-  signatureVersion   SignatureVersion? @relation(fields: [signatureVersionId], references: [id], onDelete: Restrict)
-  user               User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  signature           Signature            @relation(fields: [signatureId], references: [id], onDelete: Restrict)
+  signatureVersion    SignatureVersion?    @relation(fields: [signatureVersionId], references: [id], onDelete: Restrict)
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
   verificationRecords VerificationRecord[]
 
   @@index([signatureId])
@@ -221,12 +286,12 @@ model SignatureUsage {
 }
 
 model Revocation {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  signatureId String  @db.Uuid
-  userId    String  @db.Uuid
-  reason    String  @db.Text
-  revokedAt DateTime @default(now())
-  createdAt DateTime @default(now())
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  signatureId String   @db.Uuid
+  userId      String   @db.Uuid
+  reason      String   @db.Text
+  revokedAt   DateTime @default(now())
+  createdAt   DateTime @default(now())
 
   signature Signature @relation(fields: [signatureId], references: [id], onDelete: Restrict)
   user      User      @relation(fields: [userId], references: [id], onDelete: Restrict)
@@ -247,9 +312,9 @@ model VerificationRecord {
   verifiedAt         DateTime?
   createdAt          DateTime           @default(now())
 
-  signature        Signature        @relation(fields: [signatureId], references: [id], onDelete: Restrict)
+  signature        Signature         @relation(fields: [signatureId], references: [id], onDelete: Restrict)
   signatureVersion SignatureVersion? @relation(fields: [signatureVersionId], references: [id], onDelete: Restrict)
-  signatureUsage   SignatureUsage?  @relation(fields: [signatureUsageId], references: [id], onDelete: Restrict)
+  signatureUsage   SignatureUsage?   @relation(fields: [signatureUsageId], references: [id], onDelete: Restrict)
 
   @@index([signatureId])
   @@index([signatureVersionId])
@@ -259,20 +324,107 @@ model VerificationRecord {
 }
 
 model AuditLog {
-  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId    String?   @db.Uuid
-  signatureId String?  @db.Uuid
-  event     AuditEvent
-  ipAddress String?  @db.VarChar(45)
-  userAgent String?  @db.Text
-  metadata  Json
-  createdAt DateTime  @default(now())
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String?    @db.Uuid
+  signatureId String?    @db.Uuid
+  event       AuditEvent
+  ipAddress   String?    @db.VarChar(45)
+  userAgent   String?    @db.Text
+  metadata    Json
+  createdAt   DateTime   @default(now())
 
-  user       User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
-  signature  Signature? @relation(fields: [signatureId], references: [id], onDelete: SetNull)
+  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  signature Signature? @relation(fields: [signatureId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([signatureId])
   @@index([createdAt])
   @@index([event])
+}
+
+model SigningIdentity {
+  id        String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String                @unique @db.Uuid
+  status    SigningIdentityStatus @default(ACTIVE)
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+  closedAt  DateTime?
+
+  user       User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  keys       SigningKey[]
+  events     SigningKeyEvent[]
+  operations SigningKeyOperation[]
+
+  @@index([status])
+}
+
+model SigningKey {
+  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  signingIdentityId    String                 @db.Uuid
+  keyVersion           Int
+  algorithmProfile     String                 @db.VarChar(100)
+  provider             SigningProvider
+  providerKeyReference String                 @db.VarChar(512)
+  publicKey            Bytes                  @db.ByteA
+  publicKeyFormat      SigningPublicKeyFormat
+  fingerprint          String                 @unique @db.VarChar(64)
+  status               SigningKeyStatus       @default(PENDING)
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  activatedAt          DateTime?
+  rotatedAt            DateTime?
+  revokedAt            DateTime?
+  compromisedAt        DateTime?
+  disabledAt           DateTime?
+
+  signingIdentity SigningIdentity       @relation(fields: [signingIdentityId], references: [id], onDelete: Restrict)
+  events          SigningKeyEvent[]
+  operations      SigningKeyOperation[]
+
+  @@unique([signingIdentityId, keyVersion])
+  @@unique([signingIdentityId, id])
+  @@unique([provider, providerKeyReference])
+  @@index([signingIdentityId, status])
+  @@index([createdAt])
+}
+
+model SigningKeyEvent {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  signingIdentityId String              @db.Uuid
+  signingKeyId      String?             @db.Uuid
+  eventType         SigningKeyEventType
+  actorType         SigningActorType
+  actorUserId       String?             @db.Uuid
+  correlationId     String              @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  metadata          Json                @default("{}")
+  createdAt         DateTime            @default(now())
+
+  signingIdentity SigningIdentity @relation(fields: [signingIdentityId], references: [id], onDelete: Restrict)
+  signingKey      SigningKey?     @relation(fields: [signingIdentityId, signingKeyId], references: [signingIdentityId, id], onDelete: Restrict)
+  actorUser       User?           @relation("SigningEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([signingIdentityId, createdAt])
+  @@index([signingKeyId, createdAt])
+  @@index([actorUserId])
+  @@index([correlationId])
+}
+
+model SigningKeyOperation {
+  id                String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  signingIdentityId String                    @db.Uuid
+  signingKeyId      String?                   @db.Uuid
+  operationType     SigningKeyOperationType
+  status            SigningKeyOperationStatus @default(PENDING)
+  correlationId     String                    @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  attemptCount      Int                       @default(0)
+  safeErrorCode     String?                   @db.VarChar(100)
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  completedAt       DateTime?
+
+  signingIdentity SigningIdentity @relation(fields: [signingIdentityId], references: [id], onDelete: Restrict)
+  signingKey      SigningKey?     @relation(fields: [signingIdentityId, signingKeyId], references: [signingIdentityId, id], onDelete: Restrict)
+
+  @@index([signingIdentityId, status])
+  @@index([status, createdAt])
 }

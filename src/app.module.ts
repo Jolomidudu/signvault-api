@@ -5,6 +5,7 @@ import { AuthModule } from './auth/auth.module';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { SignaturesModule } from './signatures/signatures.module';
+import { SigningDomainModule } from './signing/signing-domain.module';
 import { UsersModule } from './users/users.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -20,6 +21,7 @@ import { AppService } from './app.service';
     UsersModule,
     AuthModule,
     SignaturesModule,
+    SigningDomainModule,
   ],
   controllers: [AppController],
   providers: [AppService],
